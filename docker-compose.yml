@@ -1,0 +1,136 @@
+version: "3.9"
+
+services:
+  # ── FastAPI app ─────────────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=local
+      - SECRET_KEY=local-dev-secret-key-change-in-production-32c
+      - POSTGRES_DSN=postgresql+asyncpg://rag:rag@postgres:5432/ragdb
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - OPENSEARCH_HOST=opensearch
+      - OPENSEARCH_PORT=9200
+      - MCP_SERVER_HOST=mcp
+      - MCP_SERVER_PORT=8001
+      - AWS_REGION=us-east-1
+      - S3_BUCKET=rag-documents
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
+    volumes:
+      - .:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # ── MCP Server ───────────────────────────────────────────────────────────────
+  mcp:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    ports:
+      - "8001:8001"
+    environment:
+      - ENVIRONMENT=local
+      - SECRET_KEY=local-dev-secret-key-change-in-production-32c
+      - POSTGRES_DSN=postgresql+asyncpg://rag:rag@postgres:5432/ragdb
+      - REDIS_URL=redis://redis:6379/0
+      - OPENSEARCH_HOST=opensearch
+      - MCP_SERVER_PORT=8001
+    depends_on:
+      - postgres
+      - redis
+      - opensearch
+    command: uvicorn app.mcp_main:mcp_app --host 0.0.0.0 --port 8001 --reload
+
+  # ── Celery worker ────────────────────────────────────────────────────────────
+  worker:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.worker
+    environment:
+      - ENVIRONMENT=local
+      - SECRET_KEY=local-dev-secret-key-change-in-production-32c
+      - POSTGRES_DSN=postgresql+asyncpg://rag:rag@postgres:5432/ragdb
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - OPENSEARCH_HOST=opensearch
+      - AWS_REGION=us-east-1
+      - S3_BUCKET=rag-documents
+    depends_on:
+      - redis
+      - postgres
+      - opensearch
+    command: celery -A app.workers.ingest.celery_app worker --loglevel=info --concurrency=2
+
+  # ── PostgreSQL ────────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: rag
+      POSTGRES_PASSWORD: rag
+      POSTGRES_DB: ragdb
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rag -d ragdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── Redis ─────────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ── OpenSearch ────────────────────────────────────────────────────────────────
+  opensearch:
+    image: opensearchproject/opensearch:2.13.0
+    environment:
+      - discovery.type=single-node
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=Admin@1234!
+      - plugins.security.disabled=true    # disable TLS for local dev
+      - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
+    ports:
+      - "9200:9200"
+    volumes:
+      - opensearch_data:/usr/share/opensearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -q '\"status\":\"green\\|yellow\"'"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+
+  # ── LocalStack (S3 mock for local dev) ───────────────────────────────────────
+  localstack:
+    image: localstack/localstack:3.4
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=s3
+      - DEFAULT_REGION=us-east-1
+    volumes:
+      - localstack_data:/var/lib/localstack
+
+volumes:
+  postgres_data:
+  opensearch_data:
+  localstack_data:
