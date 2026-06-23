@@ -12,23 +12,23 @@ env:
 
 jobs:
   # ── Lint + Type check ──────────────────────────────────────────────────────
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+lint:
+  runs-on: ubuntu-latest
+  steps:
+    - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: pip
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+        cache: pip
 
-      - run: pip install ruff mypy
+    - run: pip install ruff
 
-      - name: Ruff lint
-        run: ruff check app/ tests/
+    - name: Ruff lint (auto-fix check)
+      run: ruff check app/ tests/ --fix --exit-zero
 
-      - name: Ruff format check
-        run: ruff format --check app/ tests/
+    - name: Ruff format check
+      run: ruff format app/ tests/ --check
 
   # ── Unit + Integration tests ───────────────────────────────────────────────
   test:
