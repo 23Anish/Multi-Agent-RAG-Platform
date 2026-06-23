@@ -75,7 +75,7 @@
 
 ```bash
 # 1. Clone and set up environment
-git clone https://github.com/your-username/multi-agent-rag
+git clone https://github.com/23Anish/Multi-Agent-RAG-Platform
 cd multi-agent-rag
 cp .env.example .env   # fill in your AWS credentials
 
